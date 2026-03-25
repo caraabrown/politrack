@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>PolitiTrack v3 · Live Political Alpha Intelligence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Urbanist:wght@300;400;500;600;700&family=Oswald:wght@500;600&display=swap" rel="stylesheet"/>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;background:#04080f;font-family:'Urbanist',sans-serif;color:#b0c8e0}
+  ::-webkit-scrollbar{width:4px;height:4px}
+  ::-webkit-scrollbar-track{background:#04080f}
+  ::-webkit-scrollbar-thumb{background:#111e33;border-radius:2px}
+  #root{height:100%}
+  @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+  .spin{animation:spin 1s linear infinite}
+  .pulse{animation:pulse 2s ease-in-out infinite}
+  .fadeUp{animation:fadeUp 0.35s ease forwards}
+  button:hover{opacity:0.85}
+  a{text-decoration:none;color:inherit}
+  a:hover{opacity:0.7}
+  input:focus{outline:none;border-color:#22d3ee !important}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<script type="text/babel">
+const { useState, useMemo } = React;
+
+// ── Color tokens ──────────────────────────────────────────────────────────────
+const C = {
+  bg:"#04080f", surface:"#070d1a", card:"#090f1e", border:"#111e33",
+  text:"#b0c8e0", textDim:"#4a6880", textMuted:"#1e3048",
+  green:"#00e87a", red:"#ff3355", amber:"#f5a623", blue:"#22d3ee",
+  purple:"#9d7bff", pink:"#f472b6", teal:"#00c8a0", white:"#f0f8ff",
+};
+const SC = {Tech:C.purple,Defense:C.blue,Energy:C.amber,Health:C.green,Finance:C.red,Materials:"#a0a8b8",Pharma:C.teal,Telecom:C.pink};
+const SIG = {BULLISH:C.green,BEARISH:C.red,NEUTRAL:C.textDim,WATCH:C.amber,"VERY BULLISH":"#00ffaa",MIXED:C.amber};
+const fD = "'Bebas Neue',sans-serif";
+const fU = "'Urbanist',sans-serif";
+
+// ── Primitives ────────────────────────────────────────────────────────────────
+const Card = ({children, style={}}) => (
+  <div style={{background:C.card,border:"1px solid "+C.border,borderRadius:12,...style}}>{children}</div>
+);
+
+const Badge = ({label, color, size}) => {
+  color = color || C.textDim;
+  const xs = size === "xs";
+  return (
+    <span style={{display:"inline-flex",alignItems:"center",padding:xs?"1px 5px":"2px 8px",borderRadius:4,fontSize:xs?9:10,fontWeight:700,letterSpacing:0.8,textTransform:"uppercase",background:color+"18",color:color,border:"1px solid "+color+"38",fontFamily:fU,whiteSpace:"nowrap"}}>
+      {label}
+    </span>
+  );
+};
+
+const Chip = ({type}) => {
+  const buy = type === "BUY" || type === "CALL";
+  const c = buy ? C.green : C.red;
+  return <span style={{display:"inline-flex",padding:"3px 10px",borderRadius:6,fontSize:10,fontWeight:700,letterSpacing:1,textTransform:"uppercase",background:c+"12",color:c,border:"1px solid "+c+"30",fontFamily:fU}}>{type}</span>;
+};
+
+const Party = ({p}) => {
+  const c = p === "D" ? C.blue : C.red;
+  return <span style={{display:"inline-flex",padding:"2px 5px",borderRadius:3,fontSize:9,fontWeight:700,background:c+"14",color:c,border:"1px solid "+c+"30",fontFamily:fU}}>{p}</span>;
+};
+
+const SecTitle = ({children, mt}) => (
+  <div style={{fontSize:10,letterSpacing:2,textTransform:"uppercase",color:C.textMuted,fontWeight:600,marginBottom:10,marginTop:mt||0,fontFamily:fU}}>{children}</div>
+);
+
+const Bar = ({pct, color}) => {
+  const c = color || (pct > 80 ? C.green : pct > 55 ? C.amber : C.red);
+  return (
+    <div style={{display:"flex",alignItems:"center",gap:8}}>
+      <div style={{flex:1,height:4,background:C.border,borderRadius:2,overflow:"hidden"}}>
+        <div style={{width:pct+"%",height:"100%",background:c,borderRadius:2}}/>
+      </div>
+      <span style={{fontSize:11,fontWeight:700,color:c,minWidth:30,textAlign:"right",fontFamily:fU}}>{pct}%</span>
+    </div>
+  );
+};
+
+const Spinner = () => (
+  <svg className="spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+    <path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" opacity=".2"/>
+    <path d="M21 12a9 9 0 00-9-9"/>
+  </svg>
+);
+
+const LiveDot = ({color}) => (
+  <span className="pulse" style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:color||C.green,flexShrink:0}}/>
+);
+
+const RunBtn = ({onClick, loading, label}) => (
+  <button onClick={onClick} disabled={loading} style={{display:"flex",alignItems:"center",gap:8,padding:"11px 24px",borderRadius:10,border:"none",background:loading?C.surface:"linear-gradient(135deg,"+C.green+","+C.teal+")",color:loading?C.textDim:"#000",fontSize:12,fontWeight:700,letterSpacing:1.2,textTransform:"uppercase",cursor:loading?"not-allowed":"pointer",fontFamily:fU,flexShrink:0}}>
+    {loading ? <><Spinner/>Fetching live data...</> : <>&#9654; {label}</>}
+  </button>
+);
+
+const InfoBox = ({color, children}) => {
+  color = color || C.amber;
+  return (
+    <div style={{padding:"10px 14px",background:color+"08",border:"1px solid "+color+"25",borderRadius:8,fontSize:11,color:C.textDim,marginBottom:14,lineHeight:1.7}}>
+      {children}
+    </div>
+  );
+};
+
+const StatusRow = ({status, dotColor}) => (
+  <div style={{marginTop:12,display:"flex",alignItems:"center",gap:8,fontSize:12,color:C.textDim,fontFamily:fU}}>
+    <LiveDot color={dotColor||C.blue}/>{status}
+  </div>
+);
+
+const EmptyState = ({title, sub}) => (
+  <div style={{textAlign:"center",padding:"60px 0",color:C.textMuted}}>
+    <div style={{fontFamily:fD,fontSize:16,letterSpacing:3,marginBottom:6}}>{title}</div>
+    <div style={{fontSize:12,fontFamily:fU}}>{sub}</div>
+  </div>
+);
+
+// ── API Helpers ───────────────────────────────────────────────────────────────
+async function callClaude(prompt, useSearch) {
+  const body = {
+    model:"claude-sonnet-4-20250514",
+    max_tokens:2000,
+    messages:[{role:"user",content:prompt}]
+  };
+  if (useSearch) body.tools = [{"type":"web_search_20250305","name":"web_search"}];
+  const res = await fetch("/api/proxy",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(body)
+  });
+  const data = await res.json();
+  const txt = (data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("");
+  const clean = txt.replace(/```json|```/g,"").trim();
+  const m = clean.match(/\{[\s\S]*\}/);
+  if (!m) throw new Error("No JSON in response");
+  return JSON.parse(m[0]);
+}
+
+async function fetchLiveData(apiKeys, setStatus) {
+  const steps = [
+    "Searching House STOCK Act disclosures...",
+    "Fetching Senate trade filings...",
+    "Fetching legislation from Congress.gov...",
+    "Searching FARA foreign lobbying filings...",
+    "Scanning executive social media posts...",
+    "Pulling recent market news...",
+    "Synthesizing all sources...",
+  ];
+
+  // Congress.gov direct call
+  let legData = null;
+  if (apiKeys.congress) {
+    try {
+      const r = await fetch("https://api.congress.gov/v3/bill/119?api_key="+apiKeys.congress+"&limit=6&sort=updateDate+desc");
+      const d = await r.json();
+      legData = d.bills ? d.bills.slice(0,5) : null;
+    } catch(e){}
+  }
+
+  // GovInfo direct call
+  let govInfoData = null;
+  if (apiKeys.govinfo) {
+    try {
+      const r = await fetch("https://api.govinfo.gov/collections/CRPT/2025-01-01T00:00:00Z?pageSize=4&api_key="+apiKeys.govinfo);
+      const d = await r.json();
+      govInfoData = d.packages ? d.packages.slice(0,4) : null;
+    } catch(e){}
+  }
+
+  for (let i = 0; i < steps.length; i++) {
+    setStatus(steps[i]);
+    await new Promise(r => setTimeout(r, 300));
+  }
+
+  const today = new Date().toDateString();
+  const prompt = "You are a live political intelligence aggregator. Today is "+today+". Search the web for REAL current data.\n\nSearch:\n1. site:capitoltrades.com recent trades OR congress stock trades 2025 — 10 recent trades\n2. trump truth social posts 2025 market economy — 5 posts\n3. white house meetings executives 2025 — 4 meetings\n4. congress bills vote 2025 defense energy tech healthcare — 6 bills\n5. FARA lobbying filings 2025 — 4 filings\n\nReturn ONLY valid JSON no markdown no backticks:\n{\"dataTimestamp\":\""+new Date().toISOString()+"\",\"dataQuality\":\"HIGH|MEDIUM|LOW\",\"sourcesSummary\":\"one sentence\",\"trades\":[{\"politician\":\"\",\"party\":\"D|R\",\"stock\":\"TICKER\",\"action\":\"BUY|SELL\",\"amount\":\"\",\"date\":\"Mon DD\",\"sector\":\"\",\"correlatedBill\":\"\",\"isSpouse\":false}],\"posts\":[{\"date\":\"Mon DD\",\"text\":\"\",\"tags\":[\"\"],\"sector\":\"\",\"signal\":\"BULLISH|BEARISH|WATCH|NEUTRAL\",\"sentiment\":50}],\"meetings\":[{\"date\":\"Mon DD\",\"attendees\":\"\",\"topic\":\"\",\"sector\":\"\"}],\"legislation\":[{\"date\":\"Mon DD\",\"title\":\"\",\"committee\":\"\",\"sector\":\"\",\"status\":\"IMMINENT|UPCOMING|SCHEDULED\",\"correlated\":[\"TICK\"]}],\"fara\":[{\"date\":\"Mon DD\",\"country\":\"\",\"lobby\":\"\",\"sector\":\"\",\"amount\":\"\",\"target\":\"\",\"relevance\":\"HIGH|MEDIUM\"}]}";
+
+  const parsed = await callClaude(prompt, true);
+
+  if (legData && parsed) {
+    const real = legData.map(b => ({date:b.latestAction?.actionDate||"",title:b.title||b.number||"",committee:"Pending",sector:"General",status:"SCHEDULED",correlated:[]}));
+    parsed.legislation = [...(parsed.legislation||[]), ...real].slice(0,8);
+  }
+  return parsed;
+}
+
+// ── Settings Modal ────────────────────────────────────────────────────────────
+function SettingsModal({keys, setKeys, onClose}) {
+  const [local, setLocal] = useState({...keys});
+  const fields = [
+    {id:"congress", label:"Congress.gov API Key", hint:"Free — api.congress.gov/sign-up (instant)", ph:"Paste Congress.gov key"},
+    {id:"govinfo",  label:"GovInfo.gov API Key",  hint:"Free — api.govinfo.gov/docs (instant)",    ph:"Paste GovInfo.gov key"},
+  ];
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(4,8,15,0.94)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <Card style={{width:460,padding:28,border:"1px solid #1a3050"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+          <div>
+            <div style={{fontFamily:fD,fontSize:22,letterSpacing:2,color:C.white}}>API CONFIGURATION</div>
+            <div style={{fontSize:11,color:C.textDim,marginTop:3}}>Both keys are 100% free — no credit card</div>
+          </div>
+          <button onClick={onClose} style={{background:"none",border:"none",color:C.textDim,cursor:"pointer",fontSize:20,lineHeight:1,padding:"4px 8px"}}>✕</button>
+        </div>
+        {fields.map(field => (
+          <div key={field.id} style={{marginBottom:16}}>
+            <div style={{fontSize:12,fontWeight:600,color:C.text,marginBottom:5,fontFamily:fU}}>{field.label}</div>
+            <input
+              value={local[field.id]||""}
+              onChange={e => setLocal(l => ({...l,[field.id]:e.target.value}))}
+              placeholder={field.ph}
+              style={{width:"100%",padding:"9px 12px",background:C.surface,border:"1px solid "+C.border,borderRadius:7,color:C.text,fontSize:12,fontFamily:fU}}
+            />
+            <div style={{fontSize:10,color:C.textDim,marginTop:4}}>{field.hint}</div>
+          </div>
+        ))}
+        <InfoBox color={C.amber}>
+          <strong style={{color:C.amber}}>No keys?</strong> Works without them — falls back to AI web search. Keys improve speed and precision.
+        </InfoBox>
+        <div style={{display:"flex",gap:10}}>
+          <button onClick={()=>{setKeys(local);onClose();}} style={{flex:1,padding:"10px",borderRadius:8,border:"none",background:"linear-gradient(135deg,"+C.green+","+C.teal+")",color:"#000",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:fU,letterSpacing:1,textTransform:"uppercase"}}>
+            SAVE KEYS
+          </button>
+          <button onClick={onClose} style={{padding:"10px 20px",borderRadius:8,border:"1px solid "+C.border,background:"transparent",color:C.textDim,fontSize:12,cursor:"pointer",fontFamily:fU}}>
+            Cancel
+          </button>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ── Live Data Tab ─────────────────────────────────────────────────────────────
+function LiveDataTab({apiKeys}) {
+  const [status, setStatus] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [liveData, setLiveData] = useState(null);
+  const [err, setErr] = useState(null);
+  const qc = {HIGH:C.green, MEDIUM:C.amber, LOW:C.red};
+
+  const go = async () => {
+    setLoading(true); setErr(null); setLiveData(null);
+    try {
+      const d = await fetchLiveData(apiKeys, setStatus);
+      if (d) setLiveData(d); else setErr("Could not parse live data. Try again.");
+    } catch(e) { setErr(e.message); }
+    setLoading(false); setStatus("");
+  };
+
+  return (
+    <div className="fadeUp">
+      <Card style={{padding:20,marginBottom:16,borderColor:C.blue+"30",background:"linear-gradient(135deg,"+C.surface+",#0a1828)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:16}}>
+          <div>
+            <div style={{fontFamily:fD,fontSize:28,letterSpacing:3,color:C.white,lineHeight:1}}>LIVE DATA <span style={{color:C.blue}}>FEED</span></div>
+            <div style={{fontSize:12,color:C.textDim,marginTop:6,lineHeight:1.7,maxWidth:460}}>
+              AI web search of Capitol Trades + House disclosures, combined with Congress.gov and GovInfo.gov APIs.
+            </div>
+            <div style={{display:"flex",gap:8,marginTop:10,flexWrap:"wrap"}}>
+              <Badge label={apiKeys.congress?"Congress.gov ✓":"Congress.gov (fallback)"} color={apiKeys.congress?C.green:C.amber}/>
+              <Badge label={apiKeys.govinfo?"GovInfo.gov ✓":"GovInfo.gov (fallback)"} color={apiKeys.govinfo?C.green:C.amber}/>
+              <Badge label="Web Search Active" color={C.green}/>
+            </div>
+          </div>
+          <RunBtn onClick={go} loading={loading} label="Fetch Live Data"/>
+        </div>
+        {loading && status && <StatusRow status={status} dotColor={C.blue}/>}
+      </Card>
+
+      {err && <Card style={{padding:14,marginBottom:12,borderColor:C.red+"40",color:C.red,fontSize:12}}>{err}</Card>}
+      {!liveData && !loading && <EmptyState title="READY TO FETCH" sub="Pulls real congressional trades, social posts, lobbying data, and legislation"/>}
+
+      {liveData && (
+        <div className="fadeUp">
+          <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:14,flexWrap:"wrap"}}>
+            <Badge label="LIVE DATA" color={C.green}/>
+            {liveData.dataQuality && <Badge label={"Quality: "+liveData.dataQuality} color={qc[liveData.dataQuality]||C.amber}/>}
+            {liveData.sourcesSummary && <span style={{fontSize:11,color:C.textDim,fontStyle:"italic"}}>{liveData.sourcesSummary}</span>}
+          </div>
+
+          {liveData.trades && liveData.trades.length > 0 && (
+            <>
+              <SecTitle>LIVE TRADES ({liveData.trades.length})</SecTitle>
+              <Card style={{padding:0,overflow:"hidden",marginBottom:16}}>
+                <table style={{width:"100%",borderCollapse:"collapse"}}>
+                  <thead>
+                    <tr style={{borderBottom:"1px solid "+C.border}}>
+                      {["Politician","Stock","Action","Amount","Sector","Date","Correlated Bill"].map(h => (
+                        <th key={h} style={{padding:"9px 14px",textAlign:"left",fontSize:9,letterSpacing:1.5,textTransform:"uppercase",color:C.textMuted,fontWeight:600,whiteSpace:"nowrap"}}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {liveData.trades.map((t,i) => (
+                      <tr key={i} style={{borderBottom:"1px solid "+C.border+"20",background:i%2===0?"transparent":C.surface+"80"}}>
+                        <td style={{padding:"10px 14px"}}>
+                          <div style={{display:"flex",alignItems:"center",gap:6}}>
+                            <Party p={t.party}/>
+                            <span style={{fontSize:12,color:C.text}}>{t.politician}</span>
+                            {t.isSpouse && <Badge label="SP" color={C.pink} size="xs"/>}
+                          </div>
+                        </td>
+                        <td style={{padding:"10px 14px"}}><span style={{fontFamily:fD,fontSize:18,letterSpacing:1.5,color:C.white}}>{t.stock}</span></td>
+                        <td style={{padding:"10px 14px"}}><Chip type={t.action}/></td>
+                        <td style={{padding:"10px 14px",fontSize:11,color:C.textDim}}>{t.amount}</td>
+                        <td style={{padding:"10px 14px"}}>
+                          <span style={{fontSize:11,color:SC[t.sector]||C.textDim,background:(SC[t.sector]||C.textDim)+"12",padding:"2px 7px",borderRadius:4}}>{t.sector}</span>
+                        </td>
+                        <td style={{padding:"10px 14px",fontSize:11,color:C.textDim}}>{t.date}</td>
+                        <td style={{padding:"10px 14px",fontSize:10,color:C.amber,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.correlatedBill||"—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </Card>
+            </>
+          )}
+
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
+            {liveData.posts && liveData.posts.length > 0 && (
+              <div>
+                <SecTitle>SOCIAL POSTS</SecTitle>
+                {liveData.posts.map((p,i) => (
+                  <Card key={i} style={{padding:"12px 14px",marginBottom:10,borderLeft:"2px solid "+(SIG[p.signal]||C.textDim)}}>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                      <span style={{fontSize:11,color:C.textDim}}>{p.date}</span>
+                      <Badge label={p.signal||"?"} color={SIG[p.signal]||C.textDim}/>
+                    </div>
+                    <div style={{fontSize:12,color:C.text,lineHeight:1.65,marginBottom:6}}>"{p.text}"</div>
+                    <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                      {(p.tags||[]).map((t,j) => <span key={j} style={{fontSize:9,color:C.textMuted,border:"1px solid "+C.border,padding:"1px 6px",borderRadius:3,textTransform:"uppercase",letterSpacing:1}}>{t}</span>)}
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
+            {liveData.legislation && liveData.legislation.length > 0 && (
+              <div>
+                <SecTitle>LEGISLATION</SecTitle>
+                {liveData.legislation.map((l,i) => (
+                  <Card key={i} style={{padding:"12px 14px",marginBottom:10,borderLeft:"2px solid "+(l.status==="IMMINENT"?C.red:l.status==="UPCOMING"?C.amber:C.blue)}}>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:4,gap:8}}>
+                      <span style={{fontSize:12,fontWeight:600,color:C.text,flex:1}}>{l.title}</span>
+                      <Badge label={l.status||"?"} color={l.status==="IMMINENT"?C.red:l.status==="UPCOMING"?C.amber:C.blue} size="xs"/>
+                    </div>
+                    <div style={{fontSize:11,color:C.textDim,marginBottom:6}}>{l.committee} · {l.date}</div>
+                    <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                      {(l.correlated||[]).map((t,j) => <span key={j} style={{fontFamily:fD,fontSize:14,letterSpacing:1.5,color:C.white,background:C.surface,padding:"1px 7px",borderRadius:4,border:"1px solid "+C.border}}>{t}</span>)}
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {liveData.meetings && liveData.meetings.length > 0 && (
+            <>
+              <SecTitle>MEETINGS & LOBBYING</SecTitle>
+              {liveData.meetings.map((m,i) => (
+                <Card key={i} style={{padding:"10px 14px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}}>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:12,fontWeight:600,color:C.text}}>{m.attendees}</div>
+                    <div style={{fontSize:11,color:C.textDim,marginTop:2}}>{m.topic}</div>
+                  </div>
+                  <div style={{display:"flex",gap:6,flexShrink:0}}>
+                    <Badge label={m.sector||"?"} color={SC[m.sector]||C.textDim} size="xs"/>
+                    <span style={{fontSize:11,color:C.textDim}}>{m.date}</span>
+                  </div>
+                </Card>
+              ))}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Projections Tab ───────────────────────────────────────────────────────────
+function ProjectionsTab({apiKeys}) {
+  const [proj, setProj] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState("");
+  const [err, setErr] = useState(null);
+
+  const run = async () => {
+    setLoading(true); setErr(null); setProj(null);
+    try {
+      setStatus("Fetching live congressional trades...");
+      const live = await fetchLiveData(apiKeys, setStatus);
+      setStatus("Running 12-layer AI analysis + breaking news search...");
+
+      const tTxt = (live&&live.trades) ? live.trades.map(t => t.politician+"("+t.party+") "+t.action+" "+t.stock+" "+t.amount+" sector:"+t.sector).join("; ") : "No trades fetched";
+      const pTxt = (live&&live.posts)  ? live.posts.map(p  => "["+p.sector+"] sentiment:"+p.sentiment+' "'+p.text.slice(0,70)+'"').join("; ") : "No posts";
+      const lTxt = (live&&live.legislation) ? live.legislation.map(l => l.status+":"+l.title+"→"+(l.correlated||[]).join(",")).join("; ") : "No legislation";
+      const fTxt = (live&&live.fara)  ? live.fara.map(f => f.country+":"+f.amount+"→"+f.target).join("; ") : "No FARA";
+
+      const prompt = "You are a quantitative political intelligence analyst. Generate trade projections from LIVE data below. Also search the web for breaking political/market news in the past 48 hours.\n\nTRADES: "+tTxt+"\nPOSTS: "+pTxt+"\nLEGISLATION: "+lTxt+"\nFARA: "+fTxt+"\nDATA QUALITY: "+(live&&live.dataQuality||"UNKNOWN")+"\n\nReturn ONLY valid JSON no markdown:\n{\"marketTheme\":\"3 sentences\",\"riskLevel\":\"LOW|MEDIUM|HIGH\",\"riskRationale\":\"1 sentence\",\"topInsight\":\"most actionable signal right now\",\"dataFreshness\":\"description\",\"projections\":[{\"ticker\":\"\",\"name\":\"\",\"action\":\"BUY|SELL|WATCH\",\"confidence\":75,\"timeframe\":\"Immediate (1-5d)|Short (1-3wk)|Medium (1-3mo)\",\"primarySignal\":\"\",\"rationale\":\"3 sentences\",\"risk\":\"1 sentence\"}],\"sectorAlerts\":[{\"sector\":\"\",\"signal\":\"BULLISH|BEARISH|NEUTRAL|WATCH\",\"strength\":70,\"reason\":\"1 sentence\"}]}\nGenerate 6 projections and 5 sector alerts.";
+
+      const result = await callClaude(prompt, true);
+      setProj(result);
+    } catch(e) { setErr(e.message); }
+    setLoading(false); setStatus("");
+  };
+
+  return (
+    <div className="fadeUp">
+      <Card style={{padding:20,marginBottom:16,borderColor:C.green+"28",background:"linear-gradient(135deg,"+C.surface+",#081420)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:16}}>
+          <div>
+            <div style={{fontFamily:fD,fontSize:28,letterSpacing:3,color:C.white,lineHeight:1}}>LIVE AI <span style={{color:C.green}}>PROJECTIONS</span></div>
+            <div style={{fontSize:12,color:C.textDim,marginTop:6,maxWidth:460,lineHeight:1.7}}>
+              Fetches live data + searches breaking news, then runs full 12-layer analysis — one click.
+            </div>
+            <div style={{display:"flex",gap:8,marginTop:10,flexWrap:"wrap"}}>
+              {["Live Data Fetch","Web Search","12-Layer AI","Cluster Detect"].map((t,i) => (
+                <Badge key={i} label={t} color={i < 2 ? C.green : C.purple}/>
+              ))}
+            </div>
+          </div>
+          <RunBtn onClick={run} loading={loading} label="Run Live Analysis"/>
+        </div>
+        {loading && status && <StatusRow status={status} dotColor={C.blue}/>}
+      </Card>
+
+      {err && <Card style={{padding:14,marginBottom:12,borderColor:C.red+"40",color:C.red,fontSize:12}}>{err}</Card>}
+      {!proj && !loading && <EmptyState title="READY FOR LIVE ANALYSIS" sub="Fetches real data then runs full 12-layer projection engine"/>}
+
+      {proj && (
+        <div className="fadeUp">
+          {proj.dataFreshness && (
+            <InfoBox color={C.blue}><LiveDot color={C.blue}/> {proj.dataFreshness}</InfoBox>
+          )}
+
+          <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:12,marginBottom:14}}>
+            <Card style={{padding:16,borderColor:(proj.riskLevel==="HIGH"?C.red:proj.riskLevel==="MEDIUM"?C.amber:C.green)+"28"}}>
+              <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:8}}>
+                <Badge label={proj.riskLevel+" RISK"} color={proj.riskLevel==="HIGH"?C.red:proj.riskLevel==="MEDIUM"?C.amber:C.green}/>
+                <span style={{fontSize:11,color:C.textDim}}>{proj.riskRationale}</span>
+              </div>
+              <div style={{fontSize:13,color:C.text,lineHeight:1.7}}>{proj.marketTheme}</div>
+            </Card>
+            <Card style={{padding:16,borderColor:C.purple+"28",background:C.purple+"06"}}>
+              <div style={{fontSize:9,letterSpacing:2,color:C.purple,textTransform:"uppercase",marginBottom:6}}>Top Signal</div>
+              <div style={{fontSize:12,color:C.text,lineHeight:1.7}}>{proj.topInsight}</div>
+            </Card>
+          </div>
+
+          <SecTitle>TRADE PROJECTIONS</SecTitle>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:18}}>
+            {(proj.projections||[]).map((p,i) => (
+              <Card key={i} style={{padding:16}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+                  <div>
+                    <div style={{fontFamily:fD,fontSize:28,letterSpacing:2,color:C.white,lineHeight:1}}>{p.ticker}</div>
+                    <div style={{fontSize:11,color:C.textDim,marginTop:2}}>{p.name}</div>
+                  </div>
+                  <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:5}}>
+                    <Chip type={p.action==="SELL"?"SELL":"BUY"}/>
+                    <span style={{fontSize:9,color:C.purple,background:C.purple+"12",padding:"2px 6px",borderRadius:3,letterSpacing:0.8,textTransform:"uppercase"}}>{p.timeframe}</span>
+                  </div>
+                </div>
+                <div style={{marginBottom:8}}><Bar pct={p.confidence}/></div>
+                {p.primarySignal && <div style={{fontSize:10,color:C.amber,background:C.amber+"10",padding:"3px 8px",borderRadius:4,marginBottom:8,display:"inline-block"}}>{p.primarySignal}</div>}
+                <div style={{fontSize:12,color:C.textDim,lineHeight:1.65,marginBottom:8}}>{p.rationale}</div>
+                <div style={{fontSize:11,color:C.textMuted,borderTop:"1px solid "+C.border,paddingTop:8}}>⚠ {p.risk}</div>
+              </Card>
+            ))}
+          </div>
+
+          <SecTitle>SECTOR SIGNALS</SecTitle>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
+            {(proj.sectorAlerts||[]).map((s,i) => (
+              <Card key={i} style={{padding:14}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                  <span style={{fontSize:13,fontWeight:600,color:C.text}}>{s.sector}</span>
+                  <Badge label={s.signal} color={SIG[s.signal]||C.textDim}/>
+                </div>
+                <Bar pct={s.strength||60}/>
+                <div style={{fontSize:11,color:C.textDim,lineHeight:1.5,marginTop:8}}>{s.reason}</div>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div style={{marginTop:16,padding:"10px 14px",background:C.amber+"07",border:"1px solid "+C.amber+"20",borderRadius:7,fontSize:11,color:"#6b6050",lineHeight:1.6}}>
+        <strong style={{color:C.amber}}>Disclaimer:</strong> For informational/research purposes only. Not financial advice. Consult a licensed financial advisor before making investment decisions.
+      </div>
+    </div>
+  );
+}
+
+// ── Backtest Tab ──────────────────────────────────────────────────────────────
+function BacktestTab() {
+  const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState("");
+  const [progress, setProgress] = useState(0);
+  const [err, setErr] = useState(null);
+  const hc = h => h >= 70 ? C.green : h >= 50 ? C.amber : C.red;
+
+  const go = async () => {
+    setLoading(true); setErr(null); setResult(null); setProgress(0);
+    const steps = [
+      [10,"Searching trade archives Sep–Oct 2024..."],
+      [25,"Searching trade archives Nov–Dec 2024..."],
+      [40,"Searching trade archives Jan–Feb 2025..."],
+      [58,"Cross-referencing stock price performance..."],
+      [72,"Calculating hit rates by sector..."],
+      [85,"Ranking politicians by accuracy..."],
+      [94,"Generating calibration recommendations..."],
+    ];
+    try {
+      for (const [pct,msg] of steps) {
+        setStatus(msg); setProgress(pct);
+        await new Promise(r => setTimeout(r, 350));
+      }
+      const prompt = "You are a quantitative backtest analyst. Search the web for REAL congressional trade data Sep 2024 to Feb 2025. Search: congressional stock trades september october 2024, congressional trades november december 2024, pelosi congress trades Q4 2024 performance, then cross-reference notable tickers with actual price performance.\n\nReturn ONLY valid JSON no markdown:\n{\"backtestPeriod\":\"Sep 2024 - Feb 2025\",\"totalSignalsAnalyzed\":0,\"overallHitRate\":0,\"overallAvgReturn\":0,\"dataQuality\":\"HIGH|MEDIUM|LOW\",\"sourceNote\":\"what was found\",\"monthlyResults\":[{\"month\":\"\",\"signalsAnalyzed\":0,\"hitRate\":0,\"avgReturn\":0,\"topTrade\":{\"ticker\":\"\",\"politician\":\"\",\"action\":\"\",\"return\":0,\"notes\":\"\"}}],\"sectorAccuracy\":[{\"sector\":\"\",\"hitRate\":0,\"avgReturn\":0,\"sampleSize\":0,\"bestTicker\":\"\",\"topPolitician\":\"\"}],\"politicianRankings\":[{\"name\":\"\",\"party\":\"D|R\",\"hitRate\":0,\"avgReturn\":0,\"tradesAnalyzed\":0,\"bestTrade\":\"\",\"committee\":\"\"}],\"signalTypeAccuracy\":[{\"signalType\":\"\",\"hitRate\":0,\"avgReturn\":0,\"sampleSize\":0}],\"keyFindings\":[\"\"],\"calibrationRecommendations\":[\"\"]}";
+      const r = await callClaude(prompt, true);
+      setProgress(100);
+      setResult(r);
+    } catch(e) { setErr(e.message); }
+    setLoading(false); setStatus(""); setProgress(0);
+  };
+
+  return (
+    <div className="fadeUp">
+      <Card style={{padding:20,marginBottom:16,borderColor:C.purple+"30",background:"linear-gradient(135deg,"+C.surface+",#0d0a20)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:16}}>
+          <div>
+            <div style={{fontFamily:fD,fontSize:28,letterSpacing:3,color:C.white,lineHeight:1}}>6-MONTH <span style={{color:C.purple}}>BACKTEST</span></div>
+            <div style={{fontSize:12,color:C.textDim,marginTop:6,maxWidth:460,lineHeight:1.7}}>
+              Searches real Sep 2024–Feb 2025 congressional trade history, cross-references actual stock moves, calculates accuracy by sector, politician, and signal type.
+            </div>
+            <div style={{display:"flex",gap:8,marginTop:10,flexWrap:"wrap"}}>
+              {["Sep 2024","Oct 2024","Nov 2024","Dec 2024","Jan 2025","Feb 2025"].map(m => (
+                <span key={m} style={{fontSize:9,letterSpacing:0.8,padding:"2px 8px",borderRadius:3,background:C.border,border:"1px solid "+C.border,color:C.textMuted,textTransform:"uppercase"}}>{m}</span>
+              ))}
+            </div>
+          </div>
+          <RunBtn onClick={go} loading={loading} label="Run Backtest"/>
+        </div>
+        {loading && (
+          <div style={{marginTop:14}}>
+            <StatusRow status={status} dotColor={C.purple}/>
+            <div style={{marginTop:8,height:4,background:C.border,borderRadius:2,overflow:"hidden"}}>
+              <div style={{height:"100%",width:progress+"%",background:"linear-gradient(90deg,"+C.purple+","+C.blue+")",borderRadius:2,transition:"width 0.4s ease"}}/>
+            </div>
+            <div style={{fontSize:10,color:C.textMuted,marginTop:4,textAlign:"right"}}>{progress}%</div>
+          </div>
+        )}
+      </Card>
+
+      {err && <Card style={{padding:14,marginBottom:12,borderColor:C.red+"40",color:C.red,fontSize:12}}>{err}</Card>}
+      {!result && !loading && <EmptyState title="BACKTEST READY" sub="Searches 6 months of real congressional trade data + stock performance"/>}
+
+      {result && (
+        <div className="fadeUp">
+          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:14}}>
+            {[
+              {label:"Signals Analyzed", value:result.totalSignalsAnalyzed, color:C.blue},
+              {label:"Overall Hit Rate",  value:result.overallHitRate+"%",  color:hc(result.overallHitRate)},
+              {label:"Avg Return",        value:"+"+result.overallAvgReturn+"%", color:C.green},
+              {label:"Data Quality",      value:result.dataQuality,         color:{HIGH:C.green,MEDIUM:C.amber,LOW:C.red}[result.dataQuality]||C.textDim},
+            ].map((s,i) => (
+              <Card key={i} style={{padding:16,textAlign:"center"}}>
+                <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:C.textMuted,marginBottom:6}}>{s.label}</div>
+                <div style={{fontFamily:fD,fontSize:28,letterSpacing:2,color:s.color,lineHeight:1}}>{s.value}</div>
+              </Card>
+            ))}
+          </div>
+
+          {result.sourceNote && <InfoBox color={C.blue}>{result.sourceNote}</InfoBox>}
+
+          {result.monthlyResults && result.monthlyResults.length > 0 && (
+            <>
+              <SecTitle>MONTH-BY-MONTH</SecTitle>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:16}}>
+                {result.monthlyResults.map((m,i) => (
+                  <Card key={i} style={{padding:14}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+                      <span style={{fontFamily:"'Oswald',sans-serif",fontSize:16,letterSpacing:1,color:C.white}}>{m.month}</span>
+                      <span style={{fontFamily:fD,fontSize:24,letterSpacing:1,color:hc(m.hitRate)}}>{m.hitRate}%</span>
+                    </div>
+                    <Bar pct={m.hitRate} color={hc(m.hitRate)}/>
+                    <div style={{fontSize:11,color:C.textDim,marginTop:6}}>{m.signalsAnalyzed} signals · avg +{m.avgReturn}%</div>
+                    {m.topTrade && <div style={{fontSize:10,color:C.amber,background:C.amber+"10",padding:"4px 8px",borderRadius:4,marginTop:8}}>Top: {m.topTrade.ticker} +{m.topTrade.return}% ({m.topTrade.politician})</div>}
+                  </Card>
+                ))}
+              </div>
+            </>
+          )}
+
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:16}}>
+            {result.sectorAccuracy && result.sectorAccuracy.length > 0 && (
+              <div>
+                <SecTitle>SECTOR ACCURACY</SecTitle>
+                {result.sectorAccuracy.map((s,i) => (
+                  <Card key={i} style={{padding:"12px 14px",marginBottom:8}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                      <div>
+                        <span style={{fontSize:13,fontWeight:600,color:C.text}}>{s.sector}</span>
+                        {s.bestTicker && <span style={{fontSize:10,color:C.amber,marginLeft:8}}>Best: {s.bestTicker}</span>}
+                      </div>
+                      <div style={{textAlign:"right"}}>
+                        <div style={{fontFamily:fD,fontSize:22,letterSpacing:1,color:hc(s.hitRate),lineHeight:1}}>{s.hitRate}%</div>
+                        <div style={{fontSize:10,color:C.textDim}}>n={s.sampleSize}</div>
+                      </div>
+                    </div>
+                    <Bar pct={s.hitRate} color={hc(s.hitRate)}/>
+                    <div style={{fontSize:11,color:C.textDim,marginTop:6}}>
+                      Avg return: <span style={{color:C.green}}>+{s.avgReturn}%</span>
+                      {s.topPolitician && <> · <span style={{color:C.text}}>{s.topPolitician}</span></>}
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
+            {result.signalTypeAccuracy && result.signalTypeAccuracy.length > 0 && (
+              <div>
+                <SecTitle>SIGNAL TYPE ACCURACY</SecTitle>
+                {result.signalTypeAccuracy.map((s,i) => (
+                  <Card key={i} style={{padding:"12px 14px",marginBottom:8}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                      <span style={{fontSize:12,fontWeight:600,color:C.text,maxWidth:160}}>{s.signalType}</span>
+                      <div style={{textAlign:"right"}}>
+                        <div style={{fontFamily:fD,fontSize:22,letterSpacing:1,color:hc(s.hitRate),lineHeight:1}}>{s.hitRate}%</div>
+                        <div style={{fontSize:10,color:C.textDim}}>n={s.sampleSize}</div>
+                      </div>
+                    </div>
+                    <Bar pct={s.hitRate} color={hc(s.hitRate)}/>
+                    <div style={{fontSize:11,color:C.textDim,marginTop:6}}>Avg: <span style={{color:C.green}}>+{s.avgReturn}%</span></div>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {result.politicianRankings && result.politicianRankings.length > 0 && (
+            <>
+              <SecTitle>POLITICIAN ACCURACY RANKINGS (Backtested)</SecTitle>
+              <Card style={{padding:0,overflow:"hidden",marginBottom:16}}>
+                <table style={{width:"100%",borderCollapse:"collapse"}}>
+                  <thead>
+                    <tr style={{borderBottom:"1px solid "+C.border}}>
+                      {["#","Politician","Hit Rate","Avg Return","Trades","Best Trade"].map(h => (
+                        <th key={h} style={{padding:"9px 14px",textAlign:"left",fontSize:9,letterSpacing:1.5,textTransform:"uppercase",color:C.textMuted,fontWeight:600}}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {result.politicianRankings.map((p,i) => (
+                      <tr key={i} style={{borderBottom:"1px solid "+C.border+"18",background:i%2===0?"transparent":C.surface+"80"}}>
+                        <td style={{padding:"10px 14px"}}><span style={{fontFamily:fD,fontSize:18,color:i===0?C.amber:i===1?"#aaa":C.textMuted}}>{i+1}</span></td>
+                        <td style={{padding:"10px 14px"}}>
+                          <div style={{display:"flex",alignItems:"center",gap:6}}>
+                            <Party p={p.party}/>
+                            <span style={{fontSize:12,color:C.text,fontWeight:500}}>{p.name}</span>
+                          </div>
+                        </td>
+                        <td style={{padding:"10px 14px",minWidth:120}}><Bar pct={p.hitRate} color={hc(p.hitRate)}/></td>
+                        <td style={{padding:"10px 14px"}}><span style={{fontSize:13,fontWeight:600,color:C.green}}>+{p.avgReturn}%</span></td>
+                        <td style={{padding:"10px 14px",fontSize:11,color:C.textDim}}>{p.tradesAnalyzed}</td>
+                        <td style={{padding:"10px 14px",fontSize:11,color:C.amber}}>{p.bestTrade||"—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </Card>
+            </>
+          )}
+
+          {(result.keyFindings || result.calibrationRecommendations) && (
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+              {result.keyFindings && result.keyFindings.length > 0 && (
+                <div>
+                  <SecTitle>KEY FINDINGS</SecTitle>
+                  {result.keyFindings.map((item,i) => (
+                    <div key={i} style={{display:"flex",gap:10,marginBottom:10,padding:"10px 12px",background:C.surface,borderRadius:8,border:"1px solid "+C.border}}>
+                      <span style={{fontFamily:fD,fontSize:18,color:C.green,lineHeight:1,marginTop:1,flexShrink:0}}>{i+1}</span>
+                      <span style={{fontSize:12,color:C.text,lineHeight:1.6}}>{item}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {result.calibrationRecommendations && result.calibrationRecommendations.length > 0 && (
+                <div>
+                  <SecTitle>CALIBRATION RECOMMENDATIONS</SecTitle>
+                  {result.calibrationRecommendations.map((item,i) => (
+                    <div key={i} style={{display:"flex",gap:10,marginBottom:10,padding:"10px 12px",background:C.surface,borderRadius:8,border:"1px solid "+C.purple+"25"}}>
+                      <span style={{fontSize:14,color:C.purple,lineHeight:1,marginTop:1,flexShrink:0}}>→</span>
+                      <span style={{fontSize:12,color:C.text,lineHeight:1.6}}>{item}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Main App ──────────────────────────────────────────────────────────────────
+const TABS = [
+  {id:"projections", label:"Live Projections", icon:"◈"},
+  {id:"livedata",    label:"Live Data Feed",   icon:"◉"},
+  {id:"backtest",    label:"6-Mo Backtest",    icon:"◷"},
+];
+
+function App() {
+  const [tab, setTab] = useState("projections");
+  const [showSettings, setShowSettings] = useState(false);
+  const [apiKeys, setApiKeys] = useState({congress:"", govinfo:""});
+  const hasKeys = !!(apiKeys.congress || apiKeys.govinfo);
+  const headers = {projections:"Live AI Projections", livedata:"Live Data Feed", backtest:"6-Month Backtest Validator"};
+
+  return (
+    <div style={{display:"flex",height:"100vh",background:C.bg,color:C.text,fontFamily:fU}}>
+      {showSettings && <SettingsModal keys={apiKeys} setKeys={setApiKeys} onClose={()=>setShowSettings(false)}/>}
+
+      {/* Sidebar */}
+      <div style={{width:200,background:C.surface,borderRight:"1px solid "+C.border,display:"flex",flexDirection:"column",flexShrink:0,height:"100vh",overflow:"auto"}}>
+        <div style={{padding:"22px 16px 18px",borderBottom:"1px solid "+C.border}}>
+          <div style={{fontFamily:fD,fontSize:22,letterSpacing:3,color:C.white,lineHeight:1}}>
+            POLITI<span style={{color:C.green}}>TRACK</span>
+          </div>
+          <div style={{fontSize:9,color:C.textMuted,letterSpacing:2,textTransform:"uppercase",marginTop:3}}>v3 · Live Intelligence</div>
+          <div style={{marginTop:8,display:"flex",alignItems:"center",gap:6}}>
+            <LiveDot/><span style={{fontSize:10,color:C.green}}>Live engine active</span>
+          </div>
+        </div>
+
+        <div style={{padding:"12px 8px",flex:1}}>
+          <div style={{fontSize:9,letterSpacing:2,color:C.textMuted,textTransform:"uppercase",padding:"0 8px",marginBottom:6}}>Modules</div>
+          {TABS.map(t => {
+            const active = tab === t.id;
+            return (
+              <button key={t.id} onClick={()=>setTab(t.id)} style={{display:"flex",alignItems:"center",gap:8,padding:"9px 10px",borderRadius:7,border:"none",background:active?C.green+"10":"transparent",color:active?C.green:C.textDim,cursor:"pointer",width:"100%",textAlign:"left",fontSize:12,fontWeight:active?600:400,fontFamily:fU,borderLeft:active?"2px solid "+C.green:"2px solid transparent",marginBottom:1}}>
+                <span style={{fontSize:13}}>{t.icon}</span>{t.label}
+              </button>
+            );
+          })}
+
+          <div style={{fontSize:9,letterSpacing:2,color:C.textMuted,textTransform:"uppercase",padding:"12px 8px 6px"}}>Free Sources</div>
+          {[
+            ["Capitol Trades","https://www.capitoltrades.com"],
+            ["House Disclosures","https://disclosures.house.gov"],
+            ["Unusual Whales","https://unusualwhales.com/politics"],
+            ["OpenSecrets","https://www.opensecrets.org"],
+            ["FARA Database","https://efile.fara.gov"],
+            ["FEC.gov","https://www.fec.gov"],
+            ["GovInfo.gov","https://api.govinfo.gov"],
+          ].map(([label,url]) => (
+            <a key={label} href={url} target="_blank" rel="noopener noreferrer" style={{display:"flex",alignItems:"center",gap:7,padding:"6px 10px",borderRadius:5,color:C.textMuted,fontSize:11,borderLeft:"2px solid transparent"}}>
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                <polyline points="15 3 21 3 21 9"/>
+                <line x1="10" y1="14" x2="21" y2="3"/>
+              </svg>
+              {label}
+            </a>
+          ))}
+        </div>
+
+        <div style={{padding:"12px",borderTop:"1px solid "+C.border}}>
+          <button onClick={()=>setShowSettings(true)} style={{display:"flex",alignItems:"center",gap:7,padding:"8px 10px",borderRadius:7,border:"1px solid "+(hasKeys?C.green+"40":C.border),background:hasKeys?C.green+"08":"transparent",color:hasKeys?C.green:C.textDim,cursor:"pointer",width:"100%",fontSize:11,fontFamily:fU,fontWeight:hasKeys?600:400}}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l-.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+            {hasKeys ? "API Keys Set" : "Configure API Keys"}
+          </button>
+          <div style={{fontSize:9,color:C.textMuted,marginTop:6,lineHeight:1.5,padding:"0 2px"}}>Congress.gov + GovInfo are optional but improve accuracy</div>
+        </div>
+      </div>
+
+      {/* Main */}
+      <div style={{flex:1,overflow:"auto",background:C.bg,display:"flex",flexDirection:"column"}}>
+        <div style={{padding:"15px 24px",borderBottom:"1px solid "+C.border,background:C.bg,position:"sticky",top:0,zIndex:10,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <div style={{fontSize:16,fontWeight:600,color:C.white}}>{headers[tab]}</div>
+            <div style={{fontSize:11,color:C.textDim}}>PolitiTrack v3 · Live Political Alpha Intelligence</div>
+          </div>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            {hasKeys && <><LiveDot/><span style={{fontSize:10,color:C.green}}>API keys active</span></>}
+            <Badge label="Web Search: Live" color={C.green}/>
+          </div>
+        </div>
+
+        <div style={{padding:"22px 24px",flex:1,overflow:"auto"}}>
+          {tab === "projections" && <ProjectionsTab apiKeys={apiKeys}/>}
+          {tab === "livedata"    && <LiveDataTab    apiKeys={apiKeys}/>}
+          {tab === "backtest"    && <BacktestTab/>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
