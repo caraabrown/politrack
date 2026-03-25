@@ -130,7 +130,7 @@ const EmptyState = ({title, sub}) => (
 async function callClaude(prompt) {
   const body = {
     model:"claude-sonnet-4-20250514",
-    max_tokens:2000,
+    max_tokens:4000,
     messages:[{role:"user",content:prompt}]
   };
   const res = await fetch("/api/proxy",{
@@ -142,10 +142,17 @@ async function callClaude(prompt) {
   const data = await res.json();
   if (data.error) throw new Error(data.error);
   const txt = (data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("");
-  const clean = txt.replace(/```json|```/g,"").trim();
-  const m = clean.match(/\{[\s\S]*\}/);
-  if (!m) throw new Error("No JSON in response — raw: "+clean.slice(0,200));
-  return JSON.parse(m[0]);
+  const clean = txt.replace(/```json/g,"").replace(/```/g,"").trim();
+  // Try to extract the outermost JSON object
+  const start = clean.indexOf("{");
+  const end = clean.lastIndexOf("}");
+  if (start === -1 || end === -1) throw new Error("No JSON found in response");
+  const jsonStr = clean.slice(start, end+1);
+  try {
+    return JSON.parse(jsonStr);
+  } catch(e) {
+    throw new Error("JSON parse error: "+e.message+" — snippet: "+jsonStr.slice(0,100));
+  }
 }
 
 async function fetchLiveData(apiKeys, setStatus) {
@@ -184,8 +191,7 @@ async function fetchLiveData(apiKeys, setStatus) {
     await new Promise(r => setTimeout(r, 300));
   }
 
-  const today = new Date().toDateString();
-  const prompt = "You are a political intelligence analyst. Using your training knowledge of congressional trading patterns, generate realistic and plausible current political intelligence data as of early 2025. Base all data on real politicians, real companies, and real political dynamics you know about.\n\nGenerate data in this exact JSON structure. Return ONLY valid JSON no markdown no backticks:\n{\"dataTimestamp\":\""+new Date().toISOString()+"\",\"dataQuality\":\"MEDIUM\",\"sourcesSummary\":\"Generated from AI training knowledge of congressional trading patterns through early 2025\",\"trades\":[{\"politician\":\"\",\"party\":\"D|R\",\"stock\":\"TICKER\",\"action\":\"BUY|SELL\",\"amount\":\"\",\"date\":\"Mon DD\",\"sector\":\"\",\"correlatedBill\":\"\",\"isSpouse\":false}],\"posts\":[{\"date\":\"Mon DD\",\"text\":\"\",\"tags\":[\"\"],\"sector\":\"\",\"signal\":\"BULLISH|BEARISH|WATCH|NEUTRAL\",\"sentiment\":50}],\"meetings\":[{\"date\":\"Mon DD\",\"attendees\":\"\",\"topic\":\"\",\"sector\":\"\"}],\"legislation\":[{\"date\":\"Mon DD\",\"title\":\"\",\"committee\":\"\",\"sector\":\"\",\"status\":\"IMMINENT|UPCOMING|SCHEDULED\",\"correlated\":[\"TICK\"]}],\"fara\":[{\"date\":\"Mon DD\",\"country\":\"\",\"lobby\":\"\",\"sector\":\"\",\"amount\":\"\",\"target\":\"\",\"relevance\":\"HIGH|MEDIUM\"}]}\n\nGenerate 10 trades, 5 posts, 4 meetings, 6 legislation items, 4 FARA entries. Use real politician names, real tickers, realistic amounts. Base on known trading patterns of politicians like Pelosi, Tuberville, Crenshaw, Gottheimer, Cantwell, Cruz.";
+  const prompt = "You are a political intelligence analyst. Generate congressional trading intelligence data based on your knowledge through early 2025. Use real politician names and real stock tickers.\n\nRules: Return ONLY a JSON object. No markdown. No backticks. No text before or after the JSON. All string values must use only single quotes inside them or avoid quotes entirely.\n\nReturn this exact structure with real data filled in:\n{\"dataTimestamp\":\""+new Date().toISOString()+"\",\"dataQuality\":\"MEDIUM\",\"sourcesSummary\":\"AI training knowledge through early 2025\",\"trades\":[{\"politician\":\"Nancy Pelosi\",\"party\":\"D\",\"stock\":\"NVDA\",\"action\":\"BUY\",\"amount\":\"$1M-$5M\",\"date\":\"Jan 15\",\"sector\":\"Tech\",\"correlatedBill\":\"AI Act\",\"isSpouse\":false}],\"posts\":[{\"date\":\"Jan 10\",\"text\":\"Big things coming for American energy\",\"tags\":[\"ENERGY\"],\"sector\":\"Energy\",\"signal\":\"BULLISH\",\"sentiment\":80}],\"meetings\":[{\"date\":\"Jan 12\",\"attendees\":\"White House and tech CEOs\",\"topic\":\"AI policy review\",\"sector\":\"Tech\"}],\"legislation\":[{\"date\":\"Feb 1\",\"title\":\"AI Chips Export Control Act\",\"committee\":\"Commerce\",\"sector\":\"Tech\",\"status\":\"UPCOMING\",\"correlated\":[\"NVDA\",\"AMD\"]}],\"fara\":[{\"date\":\"Jan 20\",\"country\":\"Taiwan\",\"lobby\":\"Akin Gump\",\"sector\":\"Tech\",\"amount\":\"$1.8M\",\"target\":\"Commerce Committee\",\"relevance\":\"HIGH\"}]}\n\nReplace the example data with 5 real trades, 3 real posts, 3 real meetings, 4 real legislation items, 3 real FARA entries based on your knowledge.";
 
   const parsed = await callClaude(prompt);
 
