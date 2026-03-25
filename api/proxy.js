@@ -1,6 +1,4 @@
-export const maxDuration = 60;
-
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   if (req.method === "OPTIONS") {
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -13,7 +11,6 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Handle body whether it arrives parsed or as raw string
     const payload = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
     payload.max_tokens = 2000;
 
@@ -35,4 +32,4 @@ export default async function handler(req, res) {
     res.setHeader("Access-Control-Allow-Origin", "*");
     return res.status(500).json({ error: e.message });
   }
-}
+};
