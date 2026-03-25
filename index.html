@@ -127,23 +127,24 @@ const EmptyState = ({title, sub}) => (
 );
 
 // ── API Helpers ───────────────────────────────────────────────────────────────
-async function callClaude(prompt, useSearch) {
+async function callClaude(prompt) {
   const body = {
     model:"claude-sonnet-4-20250514",
     max_tokens:2000,
     messages:[{role:"user",content:prompt}]
   };
-  if (useSearch) body.tools = [{"type":"web_search_20250305","name":"web_search"}];
   const res = await fetch("/api/proxy",{
     method:"POST",
     headers:{"Content-Type":"application/json"},
     body:JSON.stringify(body)
   });
+  if (!res.ok) throw new Error("Proxy error: "+res.status);
   const data = await res.json();
+  if (data.error) throw new Error(data.error);
   const txt = (data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("");
   const clean = txt.replace(/```json|```/g,"").trim();
   const m = clean.match(/\{[\s\S]*\}/);
-  if (!m) throw new Error("No JSON in response");
+  if (!m) throw new Error("No JSON in response — raw: "+clean.slice(0,200));
   return JSON.parse(m[0]);
 }
 
@@ -186,7 +187,7 @@ async function fetchLiveData(apiKeys, setStatus) {
   const today = new Date().toDateString();
   const prompt = "You are a live political intelligence aggregator. Today is "+today+". Search the web for REAL current data.\n\nSearch:\n1. site:capitoltrades.com recent trades OR congress stock trades 2025 — 10 recent trades\n2. trump truth social posts 2025 market economy — 5 posts\n3. white house meetings executives 2025 — 4 meetings\n4. congress bills vote 2025 defense energy tech healthcare — 6 bills\n5. FARA lobbying filings 2025 — 4 filings\n\nReturn ONLY valid JSON no markdown no backticks:\n{\"dataTimestamp\":\""+new Date().toISOString()+"\",\"dataQuality\":\"HIGH|MEDIUM|LOW\",\"sourcesSummary\":\"one sentence\",\"trades\":[{\"politician\":\"\",\"party\":\"D|R\",\"stock\":\"TICKER\",\"action\":\"BUY|SELL\",\"amount\":\"\",\"date\":\"Mon DD\",\"sector\":\"\",\"correlatedBill\":\"\",\"isSpouse\":false}],\"posts\":[{\"date\":\"Mon DD\",\"text\":\"\",\"tags\":[\"\"],\"sector\":\"\",\"signal\":\"BULLISH|BEARISH|WATCH|NEUTRAL\",\"sentiment\":50}],\"meetings\":[{\"date\":\"Mon DD\",\"attendees\":\"\",\"topic\":\"\",\"sector\":\"\"}],\"legislation\":[{\"date\":\"Mon DD\",\"title\":\"\",\"committee\":\"\",\"sector\":\"\",\"status\":\"IMMINENT|UPCOMING|SCHEDULED\",\"correlated\":[\"TICK\"]}],\"fara\":[{\"date\":\"Mon DD\",\"country\":\"\",\"lobby\":\"\",\"sector\":\"\",\"amount\":\"\",\"target\":\"\",\"relevance\":\"HIGH|MEDIUM\"}]}";
 
-  const parsed = await callClaude(prompt, true);
+  const parsed = await callClaude(prompt);
 
   if (legData && parsed) {
     const real = legData.map(b => ({date:b.latestAction?.actionDate||"",title:b.title||b.number||"",committee:"Pending",sector:"General",status:"SCHEDULED",correlated:[]}));
@@ -407,7 +408,7 @@ function ProjectionsTab({apiKeys}) {
 
       const prompt = "You are a quantitative political intelligence analyst. Generate trade projections from LIVE data below. Also search the web for breaking political/market news in the past 48 hours.\n\nTRADES: "+tTxt+"\nPOSTS: "+pTxt+"\nLEGISLATION: "+lTxt+"\nFARA: "+fTxt+"\nDATA QUALITY: "+(live&&live.dataQuality||"UNKNOWN")+"\n\nReturn ONLY valid JSON no markdown:\n{\"marketTheme\":\"3 sentences\",\"riskLevel\":\"LOW|MEDIUM|HIGH\",\"riskRationale\":\"1 sentence\",\"topInsight\":\"most actionable signal right now\",\"dataFreshness\":\"description\",\"projections\":[{\"ticker\":\"\",\"name\":\"\",\"action\":\"BUY|SELL|WATCH\",\"confidence\":75,\"timeframe\":\"Immediate (1-5d)|Short (1-3wk)|Medium (1-3mo)\",\"primarySignal\":\"\",\"rationale\":\"3 sentences\",\"risk\":\"1 sentence\"}],\"sectorAlerts\":[{\"sector\":\"\",\"signal\":\"BULLISH|BEARISH|NEUTRAL|WATCH\",\"strength\":70,\"reason\":\"1 sentence\"}]}\nGenerate 6 projections and 5 sector alerts.";
 
-      const result = await callClaude(prompt, true);
+      const result = await callClaude(prompt);
       setProj(result);
     } catch(e) { setErr(e.message); }
     setLoading(false); setStatus("");
@@ -527,7 +528,7 @@ function BacktestTab() {
         await new Promise(r => setTimeout(r, 350));
       }
       const prompt = "You are a quantitative backtest analyst. Search the web for REAL congressional trade data Sep 2024 to Feb 2025. Search: congressional stock trades september october 2024, congressional trades november december 2024, pelosi congress trades Q4 2024 performance, then cross-reference notable tickers with actual price performance.\n\nReturn ONLY valid JSON no markdown:\n{\"backtestPeriod\":\"Sep 2024 - Feb 2025\",\"totalSignalsAnalyzed\":0,\"overallHitRate\":0,\"overallAvgReturn\":0,\"dataQuality\":\"HIGH|MEDIUM|LOW\",\"sourceNote\":\"what was found\",\"monthlyResults\":[{\"month\":\"\",\"signalsAnalyzed\":0,\"hitRate\":0,\"avgReturn\":0,\"topTrade\":{\"ticker\":\"\",\"politician\":\"\",\"action\":\"\",\"return\":0,\"notes\":\"\"}}],\"sectorAccuracy\":[{\"sector\":\"\",\"hitRate\":0,\"avgReturn\":0,\"sampleSize\":0,\"bestTicker\":\"\",\"topPolitician\":\"\"}],\"politicianRankings\":[{\"name\":\"\",\"party\":\"D|R\",\"hitRate\":0,\"avgReturn\":0,\"tradesAnalyzed\":0,\"bestTrade\":\"\",\"committee\":\"\"}],\"signalTypeAccuracy\":[{\"signalType\":\"\",\"hitRate\":0,\"avgReturn\":0,\"sampleSize\":0}],\"keyFindings\":[\"\"],\"calibrationRecommendations\":[\"\"]}";
-      const r = await callClaude(prompt, true);
+      const r = await callClaude(prompt);
       setProgress(100);
       setResult(r);
     } catch(e) { setErr(e.message); }
