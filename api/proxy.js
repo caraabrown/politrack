@@ -13,7 +13,8 @@ export default async function handler(req, res) {
   }
 
   try {
-    const payload = req.body;
+    // Handle body whether it arrives parsed or as raw string
+    const payload = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
     payload.max_tokens = 2000;
 
     const response = await fetch("https://api.anthropic.com/v1/messages", {
