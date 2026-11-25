@@ -130,7 +130,7 @@ const EmptyState = ({title, sub}) => (
 async function callClaude(prompt) {
   const body = {
     model:"claude-sonnet-4-20250514",
-    max_tokens:4000,
+    max_tokens:8000,
     messages:[{role:"user",content:prompt}]
   };
   const res = await fetch("/api/proxy",{
@@ -146,9 +146,7 @@ async function callClaude(prompt) {
   // Try to extract the outermost JSON object
   const start = clean.indexOf("{");
   const end = clean.lastIndexOf("}");
-  if (start === -1 || end === -1) throw new Error("No JSON found in response");
-  const jsonStr = clean.slice(start, end+1);
-  try {
+if (start === -1 || end === -1) throw new Error("No JSON found in response: " + clean.slice(0, 180));  try {
     return JSON.parse(jsonStr);
   } catch(e) {
     throw new Error("JSON parse error: "+e.message+" — snippet: "+jsonStr.slice(0,100));
