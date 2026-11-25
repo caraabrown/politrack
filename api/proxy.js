@@ -1,7 +1,14 @@
-// api/proxy.js
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+
   if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
+    return res.status(405).json({ error: "Method Not Allowed" });
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -10,7 +17,8 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { model, max_tokens, messages, useSearch } = req.body;
+    const incoming = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
+    const { model, max_tokens, messages, useSearch } = incoming;
 
     const payload = {
       model: model || "claude-sonnet-4-20250514",
@@ -18,7 +26,6 @@ export default async function handler(req, res) {
       messages,
     };
 
-    // Enable Anthropic server-side web search if requested
     if (useSearch) {
       payload.tools = [
         {
@@ -51,4 +58,4 @@ export default async function handler(req, res) {
   } catch (err) {
     return res.status(500).json({ error: err.message || "Internal proxy error" });
   }
-}
+};
